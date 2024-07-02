@@ -1,12 +1,15 @@
-import 'dart:async';
-import 'dart:convert';
+// ignore_for_file: prefer_const_literals_to_create_immutables, prefer_const_constructors
 
-import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
+import 'dart:async';
 import 'package:flutter_sound/flutter_sound.dart';
 import 'package:http/http.dart' as http;
-import 'package:permission_handler/permission_handler.dart';
-import 'package:logging/logging.dart';
+import 'dart:async';
+import 'dart:io';
+import 'package:flutter_sound/flutter_sound.dart';
+import 'package:path_provider/path_provider.dart';
+
+
 
 class SoundPage extends StatefulWidget {
   @override
@@ -17,126 +20,7 @@ class _SoundPageState extends State<SoundPage> {
   bool isEarAIWorking = false;
   FlutterSoundRecorder _recorder = FlutterSoundRecorder();
   bool _isRecorderInitialized = false;
-  String detectedSound = '';
 
-  final Logger _logger = Logger('SoundPage');
-  StreamSubscription? _recorderSubscription;
-  StreamController<Food>? _recordingDataController;
-
-  @override
-  void initState() {
-    super.initState();
-    _setupLogging();
-    initializeRecorder(); // Initialize recorder on start
-  }
-
-  void _setupLogging() {
-    Logger.root.level = Level.ALL; // Set logging level to ALL
-    Logger.root.onRecord.listen((record) {
-      print('${record.level.name}: ${record.time}: ${record.message}');
-    });
-  }
-
-  Future<void> initializeRecorder() async {
-    _logger.info('Initializing recorder');
-    var status = await Permission.microphone.request();
-    if (status != PermissionStatus.granted) {
-      _logger.severe('Microphone permission not granted');
-      throw RecordingPermissionException('Microphone permission not granted');
-    }
-
-    await _recorder.openRecorder();
-
-    final session = await AudioSession.instance;
-    await session.configure(AudioSessionConfiguration(
-      avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
-      avAudioSessionCategoryOptions:
-          AVAudioSessionCategoryOptions.allowBluetooth |
-              AVAudioSessionCategoryOptions.defaultToSpeaker,
-      avAudioSessionMode: AVAudioSessionMode.spokenAudio,
-      avAudioSessionRouteSharingPolicy:
-          AVAudioSessionRouteSharingPolicy.defaultPolicy,
-      avAudioSessionSetActiveOptions: AVAudioSessionSetActiveOptions.none,
-      androidAudioAttributes: const AndroidAudioAttributes(
-        contentType: AndroidAudioContentType.speech,
-        flags: AndroidAudioFlags.none,
-        usage: AndroidAudioUsage.voiceCommunication,
-      ),
-      androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
-      androidWillPauseWhenDucked: true,
-    ));
-
-    setState(() {
-      _isRecorderInitialized = true;
-    });
-    _logger.info('Recorder initialized');
-  }
-
-  Future<void> startRecording() async {
-    if (!_isRecorderInitialized) return;
-
-    try {
-      _recordingDataController = StreamController<Food>();
-      _recorderSubscription = _recordingDataController!.stream.listen((buffer) {
-        if (buffer is FoodData) {
-          _logger.info('Received audio data: ${buffer.data!.length} bytes');
-          sendAudioDataToServer(buffer.data!);
-        }
-      });
-
-      await _recorder.startRecorder(
-        toStream: _recordingDataController!.sink,
-        codec: Codec.pcm16,
-        numChannels: 1,
-        sampleRate: 44100,
-      );
-
-      _logger.info('Recording started');
-    } catch (e) {
-      _logger.severe('Failed to start recording: $e');
-    }
-  }
-
-  Future<void> stopRecording() async {
-    if (!_isRecorderInitialized) return;
-
-    try {
-      await _recorder.stopRecorder();
-      _logger.info('Recording stopped');
-      if (_recorderSubscription != null) {
-        await _recorderSubscription!.cancel();
-        _recorderSubscription = null;
-      }
-      _recordingDataController?.close();
-    } catch (e) {
-      _logger.severe('Failed to stop recording: $e');
-    }
-  }
-
-  void sendAudioDataToServer(List<int> audioData) async {
-    // Example function to send audio data to a server
-    try {
-      var response = await http.post(
-        Uri.parse('https://earai.0xtou.live'),
-        body: audioData,
-        headers: {'Content-Type': 'audio/ogg'}, // Adjust content type as needed
-      );
-      if (response.statusCode == 200) {
-        var jsonResponse = json.decode(response.body);
-        setState(() {
-          detectedSound = jsonResponse['predicted_class']; // Update the detected sound
-        });
-        _logger.info('Upload successful, detected sound: $detectedSound');
-      } else {
-        setState(() {
-          detectedSound = 'Error detecting sound';
-        });
-        _logger.severe('Upload failed, status code: ${response.statusCode}');
-      }
-    } catch (e) {
-      _logger.severe('Failed to upload audio data: $e');
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -146,8 +30,8 @@ class _SoundPageState extends State<SoundPage> {
           // Background image
           Positioned.fill(
             child: Image.asset(
-              'assets/background.jpg',
-              fit: BoxFit.cover,
+              'assets/background.jpg', // Ensure the same background image is used
+              fit: BoxFit.cover, // Cover the entire widget's area
             ),
           ),
           // Content
@@ -177,7 +61,7 @@ class _SoundPageState extends State<SoundPage> {
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        detectedSound.isNotEmpty ? detectedSound : 'Car Horn', // Display detected sound
+                        'Car Horn',
                         style: TextStyle(
                           fontSize: 18,
                           color: Colors.white,
@@ -199,19 +83,13 @@ class _SoundPageState extends State<SoundPage> {
                         color: Colors.white,
                       ),
                     ),
-                    SizedBox(width: 10),
+                    SizedBox(width: 10), // Space between text and switch (added for spacing
                     Switch(
-                      value: isEarAIWorking,
+                      value: isEarAIWorking, // Bind the switch's value to the state variable
                       onChanged: (bool value) {
                         setState(() {
-                          isEarAIWorking = value;
-                          if (isEarAIWorking) {
-                            startRecording(); // Start recording when switch is on
-                          } else {
-                            stopRecording(); // Stop recording when switch is off
-                          }
+                          isEarAIWorking = value; // Update the state on toggle
                         });
-                        _logger.info('EarAI\'s Working switch changed to $isEarAIWorking');
                       },
                       activeColor: Colors.green,
                     ),
@@ -223,7 +101,7 @@ class _SoundPageState extends State<SoundPage> {
                     child: Padding(
                       padding: const EdgeInsets.only(bottom: 30),
                       child: Text(
-                        isEarAIWorking ? 'Detecting...' : 'Paused',
+                        isEarAIWorking ? 'Detecting...' : 'Paused', // Change text based on the switch's state
                         style: TextStyle(
                           fontSize: 20,
                           color: Colors.white,
@@ -239,13 +117,5 @@ class _SoundPageState extends State<SoundPage> {
         ],
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _recorder.closeRecorder();
-    _recorderSubscription?.cancel(); // Cancel stream subscription
-    _recordingDataController?.close();
-    super.dispose();
   }
 }
